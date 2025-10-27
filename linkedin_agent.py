@@ -485,15 +485,15 @@ class LinkedInAgent:
         return {"success": False, "error": f"Unknown tool: {tool_name}"}
     
     def chat(self, user_message: str) -> str:
-    """
-    Основной метод взаимодействия, корректно обрабатывает tool_use/tool_result пары
-    """
-    self.conversation_history.append({
-        "role": "user",
-        "content": user_message
-    })
-
-    system_prompt = f"""Ты - профессиональный LinkedIn Content Manager для ПРОДАКТ АУДИТОРИИ с бесплатным мониторингом трендов.
+        """
+        Основной метод взаимодействия - ИСПРАВЛЕННАЯ ВЕРСИЯ
+        """
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        system_prompt = f"""Ты - профессиональный LinkedIn Content Manager для ПРОДАКТ АУДИТОРИИ с бесплатным мониторингом трендов.
 
 Индустрия: {self.industry}
 🎯 ЦЕЛЕВАЯ АУДИТОРИЯ: {self.target_audience or "Product Managers, Directors of Product, Product Leads"}
@@ -552,43 +552,52 @@ WORKFLOW:
 - Говори на языке PM (discovery, backlog, stakeholders, churn, activation)
 - ВСЕГДА начинай с мониторинга product-специфичных источников!"""
 
-    response = self.client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=4096,
-        system=system_prompt,
-        tools=self.tools,
-        messages=self.conversation_history
-    )
-
-    # Обрабатываем цепочку инструментов (tool_use/tool_result)
-    while response.stop_reason == "tool_use":
-        tool_use_blocks = [block for block in response.content if getattr(block, "type", None) == "tool_use"]
-        for tool_use_block in tool_use_blocks:
-            tool_name = tool_use_block.name
-            tool_input = tool_use_block.input
-
-            print(f"\n🔧 {tool_name}")
-            print(f"📝 {json.dumps(tool_input, ensure_ascii=False, indent=2)}")
-
-            tool_result = self.process_tool_call(tool_name, tool_input)
-
-            print(f"✅ {json.dumps(tool_result, ensure_ascii=False, indent=2)[:200]}...")
-
-            # Вставляем строго парой: assistant (tool_use), user (tool_result)
+        response = self.client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=4096,
+            system=system_prompt,
+            tools=self.tools,
+            messages=self.conversation_history
+        )
+        
+        # ИСПРАВЛЕННАЯ ЛОГИКА: обрабатываем ВСЕ tool_use блоки за раз
+        while response.stop_reason == "tool_use":
+            # Собираем ВСЕ tool_use блоки из этого ответа
+            tool_results = []
+            
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
+                    
+                    print(f"\n🔧 {tool_name}")
+                    print(f"📝 {json.dumps(tool_input, ensure_ascii=False, indent=2)}")
+                    
+                    # Выполняем функцию
+                    tool_result = self.process_tool_call(tool_name, tool_input)
+                    
+                    print(f"✅ {json.dumps(tool_result, ensure_ascii=False, indent=2)[:200]}...")
+                    
+                    # Добавляем результат в список
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(tool_result, ensure_ascii=False)
+                    })
+            
+            # Добавляем ответ Claude с tool_use блоками
             self.conversation_history.append({
                 "role": "assistant",
-                "content": [tool_use_block]
+                "content": response.content
             })
+            
+            # Добавляем ВСЕ tool_result блоки ОДНИМ сообщением
             self.conversation_history.append({
                 "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_block.id,
-                    "content": json.dumps(tool_result, ensure_ascii=False)
-                }]
+                "content": tool_results
             })
-
-            # Новый запрос: после каждой пары tool_use/tool_result
+            
+            # Продолжаем диалог
             response = self.client.messages.create(
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=4096,
@@ -596,19 +605,16 @@ WORKFLOW:
                 tools=self.tools,
                 messages=self.conversation_history
             )
-            if response.stop_reason != "tool_use":
-                break  # если нет нового tool_use, выходим из цикла
-
-    # Формируем финальный текстовый ответ
-    final_response = ""
-    for block in response.content:
-        if hasattr(block, "text"):
-            final_response += block.text
-
-    # Сохраняем в историю (можно не сохранять, если history нужна только для очереди инструментов)
-    self.conversation_history.append({
-        "role": "assistant",
-        "content": response.content
-    })
-
-    return final_response
+        
+        # Извлекаем финальный ответ
+        final_response = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                final_response += block.text
+        
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": response.content
+        })
+        
+        return final_response
