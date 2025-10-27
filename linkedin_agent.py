@@ -208,7 +208,8 @@ class LinkedInAgent:
         for feed_url in feeds:
             try:
                 feed = feedparser.parse(feed_url)
-                for entry in feed.entries[:5]:
+                # СОКРАТИЛИ: берем только 2 статьи из каждого фида вместо 5
+                for entry in feed.entries[:2]:
                     published = entry.get('published_parsed', None)
                     if published:
                         pub_date = datetime(*published[:6])
@@ -218,7 +219,7 @@ class LinkedInAgent:
                     all_articles.append({
                         "title": entry.get('title', ''),
                         "link": entry.get('link', ''),
-                        "summary": entry.get('summary', '')[:200],
+                        "summary": entry.get('summary', '')[:100],  # СОКРАТИЛИ: 100 символов вместо 200
                         "published": pub_date.strftime("%Y-%m-%d"),
                         "source": feed.feed.get('title', 'Unknown')
                     })
@@ -324,21 +325,21 @@ class LinkedInAgent:
             "hn_stories": []
         }
         
-        # 1. Product RSS фиды
-        rss_result = self.parse_rss_feeds("product_management", limit=10)
+        # 1. Product RSS фиды - СОКРАТИЛИ
+        rss_result = self.parse_rss_feeds("product_management", limit=5)  # было 10
         if rss_result.get("success"):
             all_trends["rss_articles"] = rss_result.get("articles", [])
         
-        # 2. Product subreddits
-        for subreddit in self.product_subreddits[:3]:
-            reddit_result = self.get_reddit_trends(subreddit, "week", 5)
+        # 2. Product subreddits - СОКРАТИЛИ
+        for subreddit in self.product_subreddits[:2]:  # было [:3]
+            reddit_result = self.get_reddit_trends(subreddit, "week", 3)  # было 5
             if reddit_result.get("success"):
                 for post in reddit_result.get("posts", []):
                     post["subreddit"] = subreddit
                     all_trends["reddit_discussions"].append(post)
         
-        # 3. Hacker News
-        hn_result = self.get_hackernews_trends(10)
+        # 3. Hacker News - СОКРАТИЛИ
+        hn_result = self.get_hackernews_trends(5)  # было 10
         if hn_result.get("success"):
             all_trends["hn_stories"] = hn_result.get("stories", [])
         
@@ -571,40 +572,48 @@ WORKFLOW:
 - Естественный разговорный стиль без лишних символов
 - Для выделения важного: ЗАГЛАВНЫЕ слова или повторение эмодзи
 
-Пример ПЛОХО:
+⚠️ КРИТИЧЕСКИ ВАЖНО - ОГРАНИЧЕНИЕ ДЛИНЫ:
+
+Telegram лимит: максимум 4000 символов!
+
+ОБЯЗАТЕЛЬНО делай ответы МАКСИМАЛЬНО КРАТКИМИ:
+- Целевая длина: 1500-2000 символов
+- Для списка трендов: название + ОДНО короткое предложение (8-12 слов)
+- Для анализа темы: только ключевой вывод, без объяснений
+- Никаких длинных описаний
+- Никаких повторений одной мысли
+- Удаляй все лишние слова
+
+Пример ПЛОХО (слишком длинно, 150+ слов):
 ```
-### Вердикт и рекомендации:
+ТОП-5 ТРЕНДОВ ДЛЯ ПРОДАКТ МЕНЕДЖЕРОВ
 
-| Критерий | Оценка |
-|----------|--------|
-| **Timely** | 8/10 |
-
-**Актуально**
-- Первый пункт
-- Второй пункт
----
-```
-
-Пример ХОРОШО:
-```
-ВЕРДИКТ И РЕКОМЕНДАЦИИ
-
-Timely (своевременно) - 8/10
-Relevant (релевантно) - 7/10
-
-✅ Актуально для публикации
-
-✅ Первый пункт
-✅ Второй пункт
-
-Это горячая тема для PM аудитории
+1. AI в продуктах
+Этот тренд очень актуален потому что многие компании сейчас внедряют искусственный интеллект и это меняет подход к разработке продуктов. PM нужно понимать как работает AI...
 ```
 
-ЗАПОМНИ: Telegram не поддерживает markdown, поэтому весь текст должен быть простым и читаемым без специального форматирования!"""
+Пример ХОРОШО (кратко, 50 слов):
+```
+ТОП-5 ТРЕНДОВ
+
+1. AI интеграция - массовое внедрение в B2B SaaS
+
+2. Retention фокус - приоритет удержанию над ростом
+
+3. Product-led growth - self-service вместо sales
+
+4. AI в discovery - автоматизация user research
+
+5. Async collaboration - удаленные команды
+```
+
+Если тема сложная - дай минимальный обзор и спроси: "Рассказать подробнее про какой пункт?"
+
+ЗАПОМНИ: Каждое слово должно нести смысл. Убирай всё лишнее. Краткость = ценность для PM."""
 
         response = self.client.messages.create(
             model="claude-sonnet-4-5-20250929",
-            max_tokens=4096,
+            max_tokens=2048,  # ОГРАНИЧИЛИ: было 4096
             system=system_prompt,
             tools=self.tools,
             messages=self.conversation_history
@@ -650,7 +659,7 @@ Relevant (релевантно) - 7/10
             # Продолжаем диалог
             response = self.client.messages.create(
                 model="claude-sonnet-4-5-20250929",
-                max_tokens=4096,
+                max_tokens=2048,  # ОГРАНИЧИЛИ: было 4096
                 system=system_prompt,
                 tools=self.tools,
                 messages=self.conversation_history
